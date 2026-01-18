@@ -122,6 +122,8 @@ pub struct BuildInfo {
 pub struct FrameRecord {
     pub step_index: StepIndex,
     pub qpc_ts: QpcTimestamp,
+    pub src_width: u32,
+    pub src_height: u32,
     pub width: u32,
     pub height: u32,
     pub data: Vec<u8>,

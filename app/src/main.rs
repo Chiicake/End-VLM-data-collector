@@ -42,13 +42,7 @@ fn run() -> io::Result<()> {
         };
         #[cfg(windows)]
         {
-            pipeline::run_realtime_with_hwnd(
-                capture,
-                input,
-                hwnd,
-                options.capture.record_resolution,
-                pipeline,
-            )?
+            pipeline::run_realtime_with_hwnd(capture, input, hwnd, pipeline)?
         }
         #[cfg(not(windows))]
         {

@@ -176,6 +176,8 @@ impl WgcCaptureImpl {
             let record = FrameRecord {
                 step_index: self.step_index,
                 qpc_ts: now,
+                src_width: src_w,
+                src_height: src_h,
                 width: dst_w,
                 height: dst_h,
                 data: self.output_buffer.clone(),

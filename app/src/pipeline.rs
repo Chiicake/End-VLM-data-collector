@@ -125,11 +125,8 @@ pub fn run_realtime_with_hwnd<S: FrameSource, I: InputCollector>(
     mut capture: S,
     mut input: I,
     target_hwnd: isize,
-    record_resolution: [u32; 2],
     mut pipeline: SessionPipeline,
 ) -> io::Result<SessionLayout> {
-    let record_width = record_resolution[0];
-    let record_height = record_resolution[1];
     loop {
         let frame = match capture.next_frame() {
             Ok(frame) => frame,
@@ -141,7 +138,13 @@ pub fn run_realtime_with_hwnd<S: FrameSource, I: InputCollector>(
         let window_start = window_end.saturating_sub(STEP_MS);
         let events = input.drain_events(window_start, window_end)?;
         let (is_foreground, cursor) =
-            sample_foreground_and_cursor(target_hwnd, record_width, record_height)?;
+            sample_foreground_and_cursor(
+                target_hwnd,
+                frame.src_width,
+                frame.src_height,
+                frame.width,
+                frame.height,
+            )?;
 
         pipeline.process_window(
             &events,
@@ -161,6 +164,8 @@ pub fn run_realtime_with_hwnd<S: FrameSource, I: InputCollector>(
 #[cfg(windows)]
 fn sample_foreground_and_cursor(
     target_hwnd: isize,
+    src_width: u32,
+    src_height: u32,
     record_width: u32,
     record_height: u32,
 ) -> io::Result<(bool, CursorProvider)> {
@@ -181,23 +186,36 @@ fn sample_foreground_and_cursor(
         }
 
         let mut point = windows::Win32::Foundation::POINT { x: 0, y: 0 };
-        if GetCursorPos(&mut point).as_bool() && record_width > 0 && record_height > 0 {
+        if GetCursorPos(&mut point).as_bool()
+            && record_width > 0
+            && record_height > 0
+            && src_width > 0
+            && src_height > 0
+        {
             let mut client_point = point;
             if ScreenToClient(target, &mut client_point).as_bool() {
                 let mut rect = windows::Win32::Foundation::RECT::default();
                 if GetClientRect(target, &mut rect).as_bool() {
-                    let src_w = (rect.right - rect.left).max(0) as f32;
-                    let src_h = (rect.bottom - rect.top).max(0) as f32;
-                    if src_w > 0.0 && src_h > 0.0 {
+                    let client_w = (rect.right - rect.left).max(0) as f32;
+                    let client_h = (rect.bottom - rect.top).max(0) as f32;
+                    if client_w > 0.0 && client_h > 0.0 {
+                        let src_w = src_width as f32;
+                        let src_h = src_height as f32;
                         let dst_w = record_width as f32;
                         let dst_h = record_height as f32;
+
+                        let scale_x = src_w / client_w;
+                        let scale_y = src_h / client_h;
+                        let src_x = (client_point.x as f32) * scale_x;
+                        let src_y = (client_point.y as f32) * scale_y;
+
                         let scale = (dst_w / src_w).min(dst_h / src_h);
                         let scaled_w = src_w * scale;
                         let scaled_h = src_h * scale;
                         let pad_x = (dst_w - scaled_w) * 0.5;
                         let pad_y = (dst_h - scaled_h) * 0.5;
-                        let record_x = (client_point.x as f32 * scale) + pad_x;
-                        let record_y = (client_point.y as f32 * scale) + pad_y;
+                        let record_x = (src_x * scale) + pad_x;
+                        let record_y = (src_y * scale) + pad_y;
                         x_norm = (record_x / dst_w).clamp(0.0, 1.0);
                         y_norm = (record_y / dst_h).clamp(0.0, 1.0);
                     }
