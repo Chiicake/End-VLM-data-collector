@@ -8,3 +8,4 @@ app = { path = "../app" }
 capture = { path = "../capture" }
 collector_core = { path = "../core", package = "core" }
 input = { path = "../input" }
+zip = "0.6"

@@ -52,6 +52,31 @@ impl GuiSessionHandle {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum GuiPackageStatus {
+    Started { total_files: u64, total_bytes: u64 },
+    File { index: u64, total_files: u64, bytes: u64, path: PathBuf },
+    Finished { output_zip: PathBuf, deleted: bool },
+    Error { message: String },
+}
+
+pub struct GuiPackageHandle {
+    pub rx: mpsc::Receiver<GuiPackageStatus>,
+    join: JoinHandle<io::Result<PathBuf>>,
+}
+
+impl GuiPackageHandle {
+    pub fn join(self) -> io::Result<PathBuf> {
+        match self.join.join() {
+            Ok(result) => result,
+            Err(_) => Err(io::Error::new(
+                io::ErrorKind::Other,
+                "gui package thread panicked",
+            )),
+        }
+    }
+}
+
 impl GuiSessionRunner {
     pub fn start_realtime_blocking(config: GuiSessionConfig) -> io::Result<PathBuf> {
         #[cfg(not(windows))]
@@ -156,15 +181,7 @@ pub struct PackageRequest {
 
 pub fn package_sessions(request: PackageRequest) -> io::Result<PathBuf> {
     let sessions_dir = request.dataset_root.join("sessions");
-    let targets = if request.session_names.is_empty() {
-        list_session_dirs(&sessions_dir)?
-    } else {
-        request
-            .session_names
-            .iter()
-            .map(|name| sessions_dir.join(name))
-            .collect()
-    };
+    let targets = resolve_targets(&sessions_dir, &request.session_names)?;
 
     if targets.is_empty() {
         return Err(io::Error::new(
@@ -173,15 +190,21 @@ pub fn package_sessions(request: PackageRequest) -> io::Result<PathBuf> {
         ));
     }
 
+    let files = collect_files(&request.dataset_root, &targets)?;
     let file = File::create(&request.output_zip)?;
     let mut zip = zip::ZipWriter::new(file);
     let options = zip::write::FileOptions::default();
 
-    for target in &targets {
-        if is_tmp_dir(target) {
-            continue;
-        }
-        add_dir_to_zip(&mut zip, &request.dataset_root, target, options)?;
+    for (path, _) in &files {
+        let rel = path.strip_prefix(&request.dataset_root).map_err(|_| {
+            io::Error::new(io::ErrorKind::Other, "failed to compute relative path")
+        })?;
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        zip.start_file(rel_str, options)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        let mut buffer = Vec::new();
+        File::open(path)?.read_to_end(&mut buffer)?;
+        zip.write_all(&buffer)?;
     }
 
     zip.finish()
@@ -196,6 +219,70 @@ pub fn package_sessions(request: PackageRequest) -> io::Result<PathBuf> {
     }
 
     Ok(request.output_zip)
+}
+
+pub fn start_package_async(request: PackageRequest) -> io::Result<GuiPackageHandle> {
+    let (tx, rx) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let sessions_dir = request.dataset_root.join("sessions");
+        let targets = resolve_targets(&sessions_dir, &request.session_names)?;
+        if targets.is_empty() {
+            let err = io::Error::new(io::ErrorKind::NotFound, "no sessions found to package");
+            let _ = tx.send(GuiPackageStatus::Error {
+                message: err.to_string(),
+            });
+            return Err(err);
+        }
+
+        let files = collect_files(&request.dataset_root, &targets)?;
+        let total_files = files.len() as u64;
+        let total_bytes = files.iter().map(|(_, size)| *size).sum();
+        let _ = tx.send(GuiPackageStatus::Started {
+            total_files,
+            total_bytes,
+        });
+
+        let file = File::create(&request.output_zip)?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::FileOptions::default();
+
+        for (index, (path, size)) in files.iter().enumerate() {
+            let rel = path.strip_prefix(&request.dataset_root).map_err(|_| {
+                io::Error::new(io::ErrorKind::Other, "failed to compute relative path")
+            })?;
+            let rel_str = rel.to_string_lossy().replace('\\', "/");
+            zip.start_file(rel_str, options)
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+            let mut buffer = Vec::new();
+            File::open(path)?.read_to_end(&mut buffer)?;
+            zip.write_all(&buffer)?;
+            let _ = tx.send(GuiPackageStatus::File {
+                index: (index + 1) as u64,
+                total_files,
+                bytes: *size,
+                path: path.clone(),
+            });
+        }
+
+        zip.finish()
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+
+        if request.delete_after {
+            for target in &targets {
+                if target.exists() {
+                    fs::remove_dir_all(target)?;
+                }
+            }
+        }
+
+        let _ = tx.send(GuiPackageStatus::Finished {
+            output_zip: request.output_zip.clone(),
+            deleted: request.delete_after,
+        });
+        Ok(request.output_zip)
+    });
+
+    Ok(GuiPackageHandle { rx, join: handle })
 }
 
 fn list_session_dirs(root: &PathBuf) -> io::Result<Vec<PathBuf>> {
@@ -213,6 +300,14 @@ fn list_session_dirs(root: &PathBuf) -> io::Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+fn resolve_targets(root: &PathBuf, names: &[String]) -> io::Result<Vec<PathBuf>> {
+    if names.is_empty() {
+        list_session_dirs(root)
+    } else {
+        Ok(names.iter().map(|name| root.join(name)).collect())
+    }
+}
+
 fn is_tmp_dir(path: &PathBuf) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -220,40 +315,23 @@ fn is_tmp_dir(path: &PathBuf) -> bool {
         .unwrap_or(false)
 }
 
-fn add_dir_to_zip(
-    zip: &mut zip::ZipWriter<File>,
-    base: &PathBuf,
-    path: &PathBuf,
-    options: zip::write::FileOptions,
-) -> io::Result<()> {
-    let mut stack = vec![path.clone()];
+fn collect_files(_base: &PathBuf, targets: &[PathBuf]) -> io::Result<Vec<(PathBuf, u64)>> {
+    let mut files = Vec::new();
+    let mut stack = targets.to_vec();
     while let Some(current) = stack.pop() {
         if is_tmp_dir(&current) {
             continue;
         }
-        let rel = current.strip_prefix(base).map_err(|_| {
-            io::Error::new(io::ErrorKind::Other, "failed to compute relative path")
-        })?;
-        let rel_str = rel.to_string_lossy().replace('\\', "/");
-
         if current.is_dir() {
-            if !rel_str.is_empty() {
-                let dir_name = format!("{}/", rel_str);
-                zip.add_directory(dir_name, options)
-                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-            }
             for entry in fs::read_dir(&current)? {
                 let entry = entry?;
                 stack.push(entry.path());
             }
-        } else {
-            zip.start_file(rel_str, options)
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-            let mut file = File::open(&current)?;
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer)?;
-            zip.write_all(&buffer)?;
+        } else if current.is_file() {
+            let size = current.metadata().map(|meta| meta.len()).unwrap_or(0);
+            files.push((current, size));
         }
     }
-    Ok(())
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(files)
 }
