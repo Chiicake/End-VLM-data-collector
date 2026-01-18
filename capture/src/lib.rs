@@ -2,30 +2,26 @@ use std::io;
 
 use collector_core::{CaptureOptions, FrameRecord};
 
+mod wgc;
+
 pub trait FrameSource {
     fn next_frame(&mut self) -> io::Result<FrameRecord>;
 }
 
 pub struct WgcCapture {
-    options: CaptureOptions,
+    inner: wgc::WgcCaptureImpl,
 }
 
 impl WgcCapture {
-    pub fn new(options: CaptureOptions) -> io::Result<Self> {
-        let _ = options;
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "WGC capture not implemented yet",
-        ))
+    pub fn new(options: CaptureOptions, target_hwnd: isize) -> io::Result<Self> {
+        let inner = wgc::WgcCaptureImpl::new(&options, target_hwnd)?;
+        Ok(Self { inner })
     }
 }
 
 impl FrameSource for WgcCapture {
     fn next_frame(&mut self) -> io::Result<FrameRecord> {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "WGC capture not implemented yet",
-        ))
+        self.inner.next_frame()
     }
 }
 
