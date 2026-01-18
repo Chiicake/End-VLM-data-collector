@@ -1,0 +1,31 @@
+{
+  "build": {
+    "beforeBuildCommand": "",
+    "beforeDevCommand": "",
+    "devPath": "dist/index.html",
+    "distDir": "dist"
+  },
+  "package": {
+    "productName": "Collector GUI",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false
+    },
+    "bundle": {
+      "active": false
+    },
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "title": "Collector GUI",
+        "width": 1200,
+        "height": 760,
+        "resizable": true
+      }
+    ]
+  }
+}

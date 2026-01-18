@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Collector GUI</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">End-LVM Data Collector</p>
+          <h1>Session Control Console</h1>
+          <p class="lead">
+            Capture 5 FPS data streams, compile actions, and package sessions in
+            one place.
+          </p>
+        </div>
+        <div class="status">
+          <div class="status-pill" id="status-pill">Idle</div>
+          <div class="status-meta" id="status-meta">Ready</div>
+        </div>
+      </header>
+
+      <main class="grid">
+        <section class="panel">
+          <h2>Session Capture</h2>
+          <div class="field">
+            <label for="dataset-root">Dataset Root</label>
+            <input
+              id="dataset-root"
+              type="text"
+              value="D:/dataset"
+              spellcheck="false"
+            />
+          </div>
+          <div class="field">
+            <label for="session-name">Session Name</label>
+            <input
+              id="session-name"
+              type="text"
+              placeholder="2026-01-18_10-30-00_run001"
+              spellcheck="false"
+            />
+          </div>
+          <div class="field">
+            <label for="ffmpeg-path">FFmpeg Path</label>
+            <input
+              id="ffmpeg-path"
+              type="text"
+              value="ffmpeg"
+              spellcheck="false"
+            />
+          </div>
+          <div class="field">
+            <label for="target-hwnd">Target HWND (hex)</label>
+            <input
+              id="target-hwnd"
+              type="text"
+              placeholder="0x12345678"
+              spellcheck="false"
+            />
+          </div>
+          <div class="field inline">
+            <label>
+              <input id="cursor-debug" type="checkbox" />
+              Cursor Debug
+            </label>
+          </div>
+          <div class="actions">
+            <button id="start-session" class="primary">Start Session</button>
+            <button id="join-session" class="ghost">Join</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Package Sessions</h2>
+          <div class="field">
+            <label for="package-sessions">Session Names (comma)</label>
+            <input
+              id="package-sessions"
+              type="text"
+              placeholder="leave empty to package all"
+              spellcheck="false"
+            />
+          </div>
+          <div class="field">
+            <label for="package-output">Output Zip</label>
+            <input
+              id="package-output"
+              type="text"
+              placeholder="D:/dataset/sessions.zip"
+              spellcheck="false"
+            />
+          </div>
+          <div class="field inline">
+            <label>
+              <input id="package-delete" type="checkbox" />
+              Delete After Package
+            </label>
+          </div>
+          <div class="actions">
+            <button id="start-package">Start Packaging</button>
+            <button id="join-package" class="ghost">Join</button>
+          </div>
+        </section>
+
+        <section class="panel log">
+          <h2>Live Log</h2>
+          <div id="log-output" class="log-output"></div>
+        </section>
+      </main>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
