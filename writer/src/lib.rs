@@ -1,4 +1,5 @@
-use std::io::{self, Write};
+use std::fs::{self, File};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -6,6 +7,37 @@ use std::time::{Duration, Instant};
 use aggregator::AggregatedWindow;
 use collector_core::ActionSnapshot;
 use serde::Serialize;
+
+pub struct SessionLayout {
+    pub root_dir: PathBuf,
+    pub temp_dir: PathBuf,
+    pub video_path: PathBuf,
+    pub actions_path: PathBuf,
+    pub compiled_path: PathBuf,
+    pub thoughts_path: PathBuf,
+    pub auto_events_path: PathBuf,
+    pub options_path: PathBuf,
+    pub meta_path: PathBuf,
+}
+
+impl SessionLayout {
+    pub fn new(dataset_root: &Path, session_name: &str) -> Self {
+        let sessions_dir = dataset_root.join("sessions");
+        let root_dir = sessions_dir.join(session_name);
+        let temp_dir = sessions_dir.join(format!("{}.tmp", session_name));
+        Self {
+            video_path: temp_dir.join("video.mp4"),
+            actions_path: temp_dir.join("actions.jsonl"),
+            compiled_path: temp_dir.join("compiled_actions.jsonl"),
+            thoughts_path: temp_dir.join("thoughts.jsonl"),
+            auto_events_path: temp_dir.join("auto_events.jsonl"),
+            options_path: temp_dir.join("options.json"),
+            meta_path: temp_dir.join("meta.json"),
+            root_dir,
+            temp_dir,
+        }
+    }
+}
 
 pub struct FfmpegConfig {
     pub ffmpeg_path: PathBuf,
@@ -98,6 +130,130 @@ pub fn default_ffmpeg_config(ffmpeg_path: &Path, output_path: &Path) -> FfmpegCo
         crf: 20,
         gop: 10,
     }
+}
+
+pub struct SessionWriter {
+    layout: SessionLayout,
+    ffmpeg: FfmpegWriter,
+    actions: JsonlWriter<BufWriter<File>>,
+    compiled: JsonlWriter<BufWriter<File>>,
+    thoughts: JsonlWriter<BufWriter<File>>,
+    auto_events: JsonlWriter<BufWriter<File>>,
+}
+
+impl SessionWriter {
+    pub fn create(
+        dataset_root: &Path,
+        session_name: &str,
+        ffmpeg_path: &Path,
+        flush_every_lines: u64,
+        flush_every: Duration,
+    ) -> io::Result<Self> {
+        let layout = SessionLayout::new(dataset_root, session_name);
+        if layout.temp_dir.exists() || layout.root_dir.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "session directory already exists",
+            ));
+        }
+        fs::create_dir_all(&layout.temp_dir)?;
+
+        let actions = JsonlWriter::new(
+            BufWriter::new(File::create(&layout.actions_path)?),
+            flush_every_lines,
+            flush_every,
+        );
+        let compiled = JsonlWriter::new(
+            BufWriter::new(File::create(&layout.compiled_path)?),
+            flush_every_lines,
+            flush_every,
+        );
+        let thoughts = JsonlWriter::new(
+            BufWriter::new(File::create(&layout.thoughts_path)?),
+            flush_every_lines,
+            flush_every,
+        );
+        let auto_events = JsonlWriter::new(
+            BufWriter::new(File::create(&layout.auto_events_path)?),
+            flush_every_lines,
+            flush_every,
+        );
+
+        let ffmpeg_config = default_ffmpeg_config(ffmpeg_path, &layout.video_path);
+        let ffmpeg = FfmpegWriter::spawn(&ffmpeg_config)?;
+
+        Ok(Self {
+            layout,
+            ffmpeg,
+            actions,
+            compiled,
+            thoughts,
+            auto_events,
+        })
+    }
+
+    pub fn layout(&self) -> &SessionLayout {
+        &self.layout
+    }
+
+    pub fn write_window(&mut self, window: &AggregatedWindow) -> io::Result<()> {
+        self.actions.write_json(&window.snapshot)?;
+        self.compiled.write_line(&window.compiled_action)?;
+        Ok(())
+    }
+
+    pub fn write_thought(&mut self, thought_line: &str) -> io::Result<()> {
+        self.thoughts.write_line(thought_line)
+    }
+
+    pub fn write_auto_event<T: Serialize>(&mut self, event: &T) -> io::Result<()> {
+        self.auto_events.write_json(event)
+    }
+
+    pub fn write_options<T: Serialize>(&self, options: &T) -> io::Result<()> {
+        write_json_file(&self.layout.options_path, options)
+    }
+
+    pub fn write_meta<T: Serialize>(&self, meta: &T) -> io::Result<()> {
+        write_json_file(&self.layout.meta_path, meta)
+    }
+
+    pub fn write_frame(&mut self, frame: &[u8]) -> io::Result<()> {
+        self.ffmpeg.write_frame(frame)
+    }
+
+    pub fn finalize(self) -> io::Result<SessionLayout> {
+        let SessionWriter {
+            layout,
+            mut ffmpeg,
+            mut actions,
+            mut compiled,
+            mut thoughts,
+            mut auto_events,
+        } = self;
+
+        actions.flush()?;
+        compiled.flush()?;
+        thoughts.flush()?;
+        auto_events.flush()?;
+        ffmpeg.finish()?;
+
+        if layout.root_dir.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "final session directory already exists",
+            ));
+        }
+        fs::rename(&layout.temp_dir, &layout.root_dir)?;
+        Ok(layout)
+    }
+}
+
+fn write_json_file<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
+    let file = File::create(path)?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer(writer, value)
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
 }
 
 pub struct JsonlWriter<W: Write> {
