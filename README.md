@@ -1,10 +1,17 @@
 # End-LVM Data Collector
 
-## CLI Dry-Run Pipeline
-The `app` crate currently provides a dry-run CLI that writes a session using
-pre-recorded input events and an optional raw frame.
+## What It Does
+This project records synchronized gameplay video and input data for training
+and evaluation. It captures a target window at 5 FPS, aggregates RawInput
+events into 200ms steps, and writes both raw actions and compiled action
+strings into a session folder.
 
-### Run
+## Build & Run
+Requirements:
+- Rust toolchain (stable)
+- `ffmpeg` available on PATH or provide a full path
+
+CLI dry-run (replays events into a session):
 ```bash
 cargo run -p app -- \
   --session-name 2026-01-18_10-30-00_run001 \
@@ -16,7 +23,48 @@ cargo run -p app -- \
   --thoughts-jsonl path/to/thoughts.jsonl
 ```
 
-### Input Events JSONL
+CLI realtime (capture a window by HWND):
+```bash
+cargo run -p app -- \
+  --session-name 2026-01-18_10-30-00_run001 \
+  --dataset-root D:/dataset \
+  --ffmpeg ffmpeg \
+  --target-hwnd 0x00123456
+```
+
+GUI (Tauri, Windows):
+```bash
+cargo run -p gui --features tauri
+```
+
+## Inputs
+Realtime capture:
+- Target HWND (window handle) chosen by GUI or CLI.
+- Keyboard/mouse input via RawInput (foreground-only).
+
+Dry-run capture (CLI):
+- `events.jsonl` stream of `InputEvent` records.
+- Optional raw BGRA frame (1280x720) reused for each step.
+- Optional `thoughts.jsonl` (one line per step).
+
+## Outputs
+Each session is written under `dataset_root/sessions/<session_name>/`:
+- `video.mp4` (5 FPS, 1280x720, H.264)
+- `actions.jsonl` (5Hz snapshots with `step_index`)
+- `compiled_actions.jsonl` (one action string per step)
+- `thoughts.jsonl` (aligned with `actions.jsonl`)
+- `auto_events.jsonl` (reserved, empty by default)
+- `options.json`, `meta.json`
+
+## Notes & Constraints
+- Windows 10 21H2+ / Windows 11, x64.
+- Capture API is Windows Graphics Capture only.
+- Recording is fixed to 5 FPS and 1280x720 letterbox.
+- Foreground-only input is enforced.
+- Capture fails if the window is invalid, hidden, minimized, cloaked, or
+  fullscreen-like.
+
+## Input Events JSONL
 Each line is a single `InputEvent` JSON object.
 
 Examples:

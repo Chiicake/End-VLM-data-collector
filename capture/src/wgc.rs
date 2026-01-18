@@ -3,6 +3,8 @@ use collector_core::{CaptureOptions, FrameRecord};
 
 #[cfg(windows)]
 use std::sync::mpsc::{self, Receiver};
+#[cfg(windows)]
+use std::time::Duration;
 
 #[cfg(windows)]
 use windows::core::{Interface, Result as WinResult};
@@ -21,6 +23,8 @@ use windows::Graphics::SizeInt32;
 #[cfg(windows)]
 use windows::Win32::Foundation::HWND;
 #[cfg(windows)]
+use windows::Win32::Foundation::RECT;
+#[cfg(windows)]
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 #[cfg(windows)]
 use windows::Win32::Graphics::Direct3D11::{
@@ -38,10 +42,23 @@ use windows::Win32::System::WinRT::Direct3D11::{
 };
 #[cfg(windows)]
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
+#[cfg(windows)]
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic, IsWindow, IsWindowVisible};
+#[cfg(windows)]
+use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+#[cfg(windows)]
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+};
+#[cfg(windows)]
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowLongPtrW, GWL_STYLE, WS_CAPTION, WS_POPUP, WS_THICKFRAME,
+};
 
 #[cfg(windows)]
 pub struct WgcCaptureImpl {
     options: CaptureOptions,
+    target_hwnd: HWND,
     item: GraphicsCaptureItem,
     _session: GraphicsCaptureSession,
     frame_pool: Direct3D11CaptureFramePool,
@@ -63,6 +80,7 @@ pub struct WgcCaptureImpl {
 impl WgcCaptureImpl {
     pub fn new(options: &CaptureOptions, target_hwnd: isize) -> io::Result<Self> {
         let hwnd = HWND(target_hwnd as isize);
+        ensure_window_ready(hwnd)?;
         let item = create_capture_item(hwnd).map_err(map_win_err)?;
         let (device, context, d3d_device) = create_d3d_device().map_err(map_win_err)?;
         let content_size = item.Size().map_err(map_win_err)?;
@@ -94,6 +112,7 @@ impl WgcCaptureImpl {
 
         Ok(Self {
             options: options.clone(),
+            target_hwnd: hwnd,
             item,
             _session: session,
             frame_pool,
@@ -114,9 +133,17 @@ impl WgcCaptureImpl {
 
     pub fn next_frame(&mut self) -> io::Result<FrameRecord> {
         loop {
-            let _ = self.frame_rx.recv().map_err(|_| {
-                io::Error::new(io::ErrorKind::UnexpectedEof, "frame channel closed")
-            })?;
+            ensure_window_ready(self.target_hwnd)?;
+            match self.frame_rx.recv_timeout(Duration::from_millis(50)) {
+                Ok(()) => {}
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "frame channel closed",
+                    ))
+                }
+            }
 
             let frame = match self.frame_pool.TryGetNextFrame() {
                 Ok(frame) => frame,
@@ -335,6 +362,117 @@ fn ensure_buffer_size(buffer: &mut Vec<u8>, width: u32, height: u32) {
     if buffer.len() != size {
         buffer.clear();
         buffer.resize(size, 0);
+    }
+}
+
+#[cfg(windows)]
+fn ensure_window_ready(hwnd: HWND) -> io::Result<()> {
+    unsafe {
+        if !IsWindow(hwnd).as_bool() {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "target window is not valid",
+            ));
+        }
+        if !IsWindowVisible(hwnd).as_bool() {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "target window is not visible",
+            ));
+        }
+        if IsIconic(hwnd).as_bool() {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "target window is minimized",
+            ));
+        }
+        if is_window_cloaked(hwnd) {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "target window is cloaked",
+            ));
+        }
+        let mut rect = RECT::default();
+        if !GetWindowRect(hwnd, &mut rect).as_bool() {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "failed to query target window rect",
+            ));
+        }
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+        if width <= 0 || height <= 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "target window has empty bounds",
+            ));
+        }
+        if is_fullscreen_like(hwnd, rect)? {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "target window looks fullscreen; use windowed mode",
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn is_fullscreen_like(hwnd: HWND, rect: RECT) -> io::Result<bool> {
+    unsafe {
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if monitor.0 == 0 {
+            return Ok(false);
+        }
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+            return Ok(false);
+        }
+        if !rect_matches_monitor(rect, info.rcMonitor) {
+            return Ok(false);
+        }
+
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+        let has_popup = (style & WS_POPUP.0 as u32) != 0;
+        let has_caption = (style & WS_CAPTION.0 as u32) != 0;
+        let has_thickframe = (style & WS_THICKFRAME.0 as u32) != 0;
+        Ok(has_popup && !has_caption && !has_thickframe)
+    }
+}
+
+#[cfg(windows)]
+fn rect_matches_monitor(rect: RECT, monitor: RECT) -> bool {
+    let tol = 1;
+    let left_ok = abs_diff_i32(rect.left, monitor.left) <= tol;
+    let top_ok = abs_diff_i32(rect.top, monitor.top) <= tol;
+    let right_ok = abs_diff_i32(rect.right, monitor.right) <= tol;
+    let bottom_ok = abs_diff_i32(rect.bottom, monitor.bottom) <= tol;
+    left_ok && top_ok && right_ok && bottom_ok
+}
+
+#[cfg(windows)]
+fn abs_diff_i32(a: i32, b: i32) -> i32 {
+    (a - b).abs()
+}
+
+#[cfg(windows)]
+fn is_window_cloaked(hwnd: HWND) -> bool {
+    unsafe {
+        let mut cloaked: u32 = 0;
+        if DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            &mut cloaked as *mut _ as *mut _,
+            std::mem::size_of::<u32>() as u32,
+        )
+        .is_err()
+        {
+            return false;
+        }
+        cloaked != 0
     }
 }
 
