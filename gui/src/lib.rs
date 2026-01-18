@@ -8,6 +8,7 @@ use std::fs::{self, File};
 use std::io::Read;
 
 use collector_core::{Meta, Options};
+use serde::{Deserialize, Serialize};
 #[cfg(windows)]
 use app::pipeline::{PipelineConfig, SessionPipeline};
 #[cfg(windows)]
@@ -15,6 +16,7 @@ use capture::WgcCapture;
 #[cfg(windows)]
 use input::RawInputCollector;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GuiSessionConfig {
     pub dataset_root: PathBuf,
     pub session_name: String,
@@ -172,6 +174,10 @@ impl GuiSessionRunner {
     }
 }
 
+#[cfg(feature = "tauri")]
+pub mod tauri_commands;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageRequest {
     pub dataset_root: PathBuf,
     pub session_names: Vec<String>,
