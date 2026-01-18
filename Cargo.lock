@@ -19,6 +19,7 @@ dependencies = [
  "core",
  "input",
  "serde_json",
+ "windows",
  "writer",
 ]
 

@@ -8,6 +8,15 @@ use collector_core::{InputEvent, Meta, Options, QpcTimestamp, StepIndex, STEP_MS
 use input::InputCollector;
 use writer::{SessionLayout, SessionWriter};
 
+#[cfg(windows)]
+use windows::Win32::Foundation::HWND;
+#[cfg(windows)]
+use windows::Win32::UI::Input::KeyboardAndMouse::GetCursorInfo;
+#[cfg(windows)]
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetCursorPos, CURSORINFO, CURSOR_SHOWING};
+#[cfg(windows)]
+use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetForegroundWindow, ScreenToClient};
+
 const DEFAULT_FLUSH_LINES: u64 = 10;
 const DEFAULT_FLUSH_SECS: u64 = 1;
 
@@ -76,6 +85,7 @@ impl SessionPipeline {
     }
 }
 
+#[allow(dead_code)]
 pub fn run_realtime<S: FrameSource, I: InputCollector>(
     mut capture: S,
     mut input: I,
@@ -92,14 +102,16 @@ pub fn run_realtime<S: FrameSource, I: InputCollector>(
         let window_end = frame.qpc_ts;
         let window_start = window_end.saturating_sub(STEP_MS);
         let events = input.drain_events(window_start, window_end)?;
+        let is_foreground = true;
+        let cursor_sample = cursor.clone();
 
         pipeline.process_window(
             &events,
             window_start,
             window_end,
             frame.step_index,
-            true,
-            cursor,
+            is_foreground,
+            &cursor_sample,
             &frame.data,
             None,
         )?;
@@ -108,6 +120,86 @@ pub fn run_realtime<S: FrameSource, I: InputCollector>(
     pipeline.finalize()
 }
 
+#[cfg(windows)]
+pub fn run_realtime_with_hwnd<S: FrameSource, I: InputCollector>(
+    mut capture: S,
+    mut input: I,
+    target_hwnd: isize,
+    mut pipeline: SessionPipeline,
+) -> io::Result<SessionLayout> {
+    loop {
+        let frame = match capture.next_frame() {
+            Ok(frame) => frame,
+            Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(err) => return Err(err),
+        };
+
+        let window_end = frame.qpc_ts;
+        let window_start = window_end.saturating_sub(STEP_MS);
+        let events = input.drain_events(window_start, window_end)?;
+        let (is_foreground, cursor) = sample_foreground_and_cursor(target_hwnd)?;
+
+        pipeline.process_window(
+            &events,
+            window_start,
+            window_end,
+            frame.step_index,
+            is_foreground,
+            &cursor,
+            &frame.data,
+            None,
+        )?;
+    }
+
+    pipeline.finalize()
+}
+
+#[cfg(windows)]
+fn sample_foreground_and_cursor(target_hwnd: isize) -> io::Result<(bool, CursorProvider)> {
+    unsafe {
+        let target = HWND(target_hwnd);
+        let fg = GetForegroundWindow();
+        let is_foreground = fg == target;
+
+        let mut ci = CURSORINFO {
+            cbSize: std::mem::size_of::<CURSORINFO>() as u32,
+            ..Default::default()
+        };
+        let mut visible = false;
+        let mut x_norm = 0.0f32;
+        let mut y_norm = 0.0f32;
+        if GetCursorInfo(&mut ci).as_bool() {
+            visible = (ci.flags & CURSOR_SHOWING) != 0;
+        }
+
+        let mut point = windows::Win32::Foundation::POINT { x: 0, y: 0 };
+        if GetCursorPos(&mut point).as_bool() {
+            let mut client_point = point;
+            if ScreenToClient(target, &mut client_point).as_bool() {
+                let mut rect = windows::Win32::Foundation::RECT::default();
+                if GetClientRect(target, &mut rect).as_bool() {
+                    let width = (rect.right - rect.left) as f32;
+                    let height = (rect.bottom - rect.top) as f32;
+                    if width > 0.0 && height > 0.0 {
+                        x_norm = (client_point.x as f32 / width).clamp(0.0, 1.0);
+                        y_norm = (client_point.y as f32 / height).clamp(0.0, 1.0);
+                    }
+                }
+            }
+        }
+
+        Ok((
+            is_foreground,
+            CursorProvider {
+                visible,
+                x_norm,
+                y_norm,
+            },
+        ))
+    }
+}
+
+#[allow(dead_code)]
 pub fn default_session_name(now: &str, run_id: u32) -> String {
     format!("{}_run{:03}", now, run_id)
 }

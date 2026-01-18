@@ -1,8 +1,8 @@
 use std::io;
-use std::sync::mpsc::{self, Receiver};
-use std::time::Duration;
+use collector_core::{CaptureOptions, FrameRecord};
 
-use collector_core::{CaptureOptions, FrameRecord, QpcTimestamp, StepIndex};
+#[cfg(windows)]
+use std::sync::mpsc::{self, Receiver};
 
 #[cfg(windows)]
 use windows::core::{Interface, Result as WinResult};

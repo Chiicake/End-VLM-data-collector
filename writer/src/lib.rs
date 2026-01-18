@@ -225,7 +225,7 @@ impl SessionWriter {
     pub fn finalize(self) -> io::Result<SessionLayout> {
         let SessionWriter {
             layout,
-            mut ffmpeg,
+            ffmpeg,
             mut actions,
             mut compiled,
             mut thoughts,

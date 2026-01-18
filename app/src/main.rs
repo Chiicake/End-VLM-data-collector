@@ -35,12 +35,26 @@ fn run() -> io::Result<()> {
     let layout = if let Some(hwnd) = args.target_hwnd {
         let capture = WgcCapture::new(options.capture.clone(), hwnd)?;
         let input = input::RawInputCollector::new()?;
-        let cursor = CursorProvider {
+        let _cursor = CursorProvider {
             visible: false,
             x_norm: 0.0,
             y_norm: 0.0,
         };
-        pipeline::run_realtime(capture, input, &cursor, pipeline)?
+        #[cfg(windows)]
+        {
+            pipeline::run_realtime_with_hwnd(capture, input, hwnd, pipeline)?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = hwnd;
+            let _ = capture;
+            let _ = input;
+            let _ = pipeline;
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "--target-hwnd requires Windows",
+            ));
+        }
     } else {
         let events = if let Some(path) = args.events_jsonl.as_ref() {
             load_events(path)?
@@ -248,7 +262,7 @@ fn load_frame(path: Option<&PathBuf>) -> io::Result<Vec<u8>> {
     let size = (RECORD_WIDTH as usize)
         .saturating_mul(RECORD_HEIGHT as usize)
         .saturating_mul(4);
-    let mut data = if let Some(path) = path {
+    let data = if let Some(path) = path {
         std::fs::read(path)?
     } else {
         vec![0u8; size]
