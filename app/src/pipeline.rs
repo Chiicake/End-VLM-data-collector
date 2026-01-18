@@ -7,6 +7,9 @@ use capture::FrameSource;
 use collector_core::{InputEvent, Meta, Options, QpcTimestamp, StepIndex, STEP_MS};
 
 #[cfg(windows)]
+use collector_core::FrameRecord;
+
+#[cfg(windows)]
 use collector_core::InputEventKind;
 use input::InputCollector;
 use writer::{SessionLayout, SessionWriter};
@@ -131,11 +134,34 @@ pub fn run_realtime<S: FrameSource, I: InputCollector>(
 
 #[cfg(windows)]
 pub fn run_realtime_with_hwnd<S: FrameSource, I: InputCollector>(
+    capture: S,
+    input: I,
+    target_hwnd: isize,
+    debug_cursor: bool,
+    pipeline: SessionPipeline,
+) -> io::Result<SessionLayout> {
+    run_realtime_with_hwnd_and_hook(
+        capture,
+        input,
+        target_hwnd,
+        debug_cursor,
+        pipeline,
+        |_frame, _is_foreground, _cursor| {},
+    )
+}
+
+#[cfg(windows)]
+pub fn run_realtime_with_hwnd_and_hook<
+    S: FrameSource,
+    I: InputCollector,
+    F: FnMut(&FrameRecord, bool, &CursorProvider),
+>(
     mut capture: S,
     mut input: I,
     target_hwnd: isize,
     debug_cursor: bool,
     mut pipeline: SessionPipeline,
+    mut on_frame: F,
 ) -> io::Result<SessionLayout> {
     let mut cursor_test = CursorTestState::new();
     set_per_monitor_dpi_awareness();
@@ -157,6 +183,7 @@ pub fn run_realtime_with_hwnd<S: FrameSource, I: InputCollector>(
                 frame.width,
                 frame.height,
             )?;
+        on_frame(&frame, is_foreground, &cursor);
         if debug_cursor && cursor_test.triggered(&events) {
             cursor_test.log_result(&cursor, debug_info.as_ref());
         }
