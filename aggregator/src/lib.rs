@@ -4,6 +4,7 @@ use collector_core::{
     ActionSnapshot, CursorSample, InputEvent, InputEventKind, KeyboardSnapshot, MouseButtons,
     MouseSnapshot, QpcTimestamp, StepIndex, WindowState,
 };
+use compiler::{compile_action_string, KeyState as CompilerKeyState};
 
 #[derive(Debug, Clone)]
 pub struct CursorProvider {
@@ -25,13 +26,47 @@ impl CursorProvider {
 #[derive(Debug, Default)]
 pub struct AggregatorState {
     down_keys: HashSet<String>,
+    compiler_state: CompilerKeyState,
 }
 
 impl AggregatorState {
     pub fn new() -> Self {
         Self {
             down_keys: HashSet::new(),
+            compiler_state: CompilerKeyState::new(),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct AggregatedWindow {
+    pub snapshot: ActionSnapshot,
+    pub compiled_action: String,
+}
+
+pub fn aggregate_window_with_compiled(
+    events: &[InputEvent],
+    window_start: QpcTimestamp,
+    window_end: QpcTimestamp,
+    step_index: StepIndex,
+    is_foreground: bool,
+    cursor_provider: &CursorProvider,
+    state: &mut AggregatorState,
+) -> AggregatedWindow {
+    let compiled_action =
+        compile_action_string(events, window_start, window_end, &mut state.compiler_state);
+    let snapshot = aggregate_window(
+        events,
+        window_start,
+        window_end,
+        step_index,
+        is_foreground,
+        cursor_provider,
+        state,
+    );
+    AggregatedWindow {
+        snapshot,
+        compiled_action,
     }
 }
 
@@ -153,5 +188,23 @@ mod tests {
             aggregate_window(&events, 0, 200, 0, false, &cursor, &mut state);
         assert_eq!(snapshot.mouse.dx, 0);
         assert_eq!(snapshot.keyboard.down.len(), 0);
+    }
+
+    #[test]
+    fn compiled_action_is_generated() {
+        let events = vec![InputEvent {
+            qpc_ts: 10,
+            kind: InputEventKind::KeyDown {
+                key: "W".to_string(),
+            },
+        }];
+        let cursor = CursorProvider {
+            visible: false,
+            x_norm: 0.0,
+            y_norm: 0.0,
+        };
+        let mut state = AggregatorState::new();
+        let out = aggregate_window_with_compiled(&events, 0, 200, 0, true, &cursor, &mut state);
+        assert!(out.compiled_action.contains("<|action_start|>"));
     }
 }
