@@ -15,7 +15,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::GetCursorInfo;
 #[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetCursorPos, CURSORINFO, CURSOR_SHOWING};
 #[cfg(windows)]
-use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetForegroundWindow, ScreenToClient};
+use windows::Win32::UI::HiDpi::{
+    GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+};
+#[cfg(windows)]
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetClientRect, GetForegroundWindow, ScreenToClient,
+};
 
 const DEFAULT_FLUSH_LINES: u64 = 10;
 const DEFAULT_FLUSH_SECS: u64 = 1;
@@ -125,8 +131,10 @@ pub fn run_realtime_with_hwnd<S: FrameSource, I: InputCollector>(
     mut capture: S,
     mut input: I,
     target_hwnd: isize,
+    debug_cursor: bool,
     mut pipeline: SessionPipeline,
 ) -> io::Result<SessionLayout> {
+    set_per_monitor_dpi_awareness();
     loop {
         let frame = match capture.next_frame() {
             Ok(frame) => frame,
@@ -137,7 +145,7 @@ pub fn run_realtime_with_hwnd<S: FrameSource, I: InputCollector>(
         let window_end = frame.qpc_ts;
         let window_start = window_end.saturating_sub(STEP_MS);
         let events = input.drain_events(window_start, window_end)?;
-        let (is_foreground, cursor) =
+        let (is_foreground, cursor, debug_info) =
             sample_foreground_and_cursor(
                 target_hwnd,
                 frame.src_width,
@@ -145,6 +153,26 @@ pub fn run_realtime_with_hwnd<S: FrameSource, I: InputCollector>(
                 frame.width,
                 frame.height,
             )?;
+        if debug_cursor {
+            if let Some(info) = debug_info {
+                eprintln!(
+                    "[cursor] step={} fg={} vis={} client=({}, {}) src={}x{} record={}x{} record_xy=({}, {}) norm=({:.4}, {:.4})",
+                    frame.step_index,
+                    is_foreground,
+                    cursor.visible,
+                    info.client_x,
+                    info.client_y,
+                    info.src_w,
+                    info.src_h,
+                    info.record_w,
+                    info.record_h,
+                    info.record_x,
+                    info.record_y,
+                    cursor.x_norm,
+                    cursor.y_norm
+                );
+            }
+        }
 
         pipeline.process_window(
             &events,
@@ -168,7 +196,7 @@ fn sample_foreground_and_cursor(
     src_height: u32,
     record_width: u32,
     record_height: u32,
-) -> io::Result<(bool, CursorProvider)> {
+) -> io::Result<(bool, CursorProvider, Option<CursorDebug>)> {
     unsafe {
         let target = HWND(target_hwnd);
         let fg = GetForegroundWindow();
@@ -181,6 +209,7 @@ fn sample_foreground_and_cursor(
         let mut visible = false;
         let mut x_norm = 0.0f32;
         let mut y_norm = 0.0f32;
+        let mut debug_info = None;
         if GetCursorInfo(&mut ci).as_bool() {
             visible = (ci.flags & CURSOR_SHOWING) != 0;
         }
@@ -199,15 +228,16 @@ fn sample_foreground_and_cursor(
                     let client_w = (rect.right - rect.left).max(0) as f32;
                     let client_h = (rect.bottom - rect.top).max(0) as f32;
                     if client_w > 0.0 && client_h > 0.0 {
+                        let dpi = GetDpiForWindow(target) as f32;
                         let src_w = src_width as f32;
                         let src_h = src_height as f32;
                         let dst_w = record_width as f32;
                         let dst_h = record_height as f32;
-
                         let scale_x = src_w / client_w;
                         let scale_y = src_h / client_h;
-                        let src_x = (client_point.x as f32) * scale_x;
-                        let src_y = (client_point.y as f32) * scale_y;
+                        let dpi_scale = (dpi / 96.0).max(0.0001);
+                        let src_x = (client_point.x as f32 / dpi_scale) * scale_x;
+                        let src_y = (client_point.y as f32 / dpi_scale) * scale_y;
 
                         let scale = (dst_w / src_w).min(dst_h / src_h);
                         let scaled_w = src_w * scale;
@@ -218,13 +248,46 @@ fn sample_foreground_and_cursor(
                         let record_y = (src_y * scale) + pad_y;
                         x_norm = (record_x / dst_w).clamp(0.0, 1.0);
                         y_norm = (record_y / dst_h).clamp(0.0, 1.0);
+                        debug_info = Some(CursorDebug {
+                            client_x: client_point.x,
+                            client_y: client_point.y,
+                            src_w: src_width,
+                            src_h: src_height,
+                            record_w: record_width,
+                            record_h: record_height,
+                            record_x: record_x.round() as i32,
+                            record_y: record_y.round() as i32,
+                        });
                     }
                 }
             }
         }
 
-        Ok((is_foreground, CursorProvider { visible, x_norm, y_norm }))
+        Ok((
+            is_foreground,
+            CursorProvider { visible, x_norm, y_norm },
+            debug_info,
+        ))
     }
+}
+
+#[cfg(windows)]
+fn set_per_monitor_dpi_awareness() {
+    unsafe {
+        let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    }
+}
+
+#[cfg(windows)]
+struct CursorDebug {
+    client_x: i32,
+    client_y: i32,
+    src_w: u32,
+    src_h: u32,
+    record_w: u32,
+    record_h: u32,
+    record_x: i32,
+    record_y: i32,
 }
 
 #[allow(dead_code)]

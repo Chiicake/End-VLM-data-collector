@@ -19,6 +19,8 @@ fn main() {
 
 fn run() -> io::Result<()> {
     let args = parse_args().map_err(|msg| io::Error::new(io::ErrorKind::Other, msg))?;
+    #[cfg(not(windows))]
+    let _ = args.cursor_debug;
     ensure_dataset_root(&args.dataset_root)?;
 
     let config = PipelineConfig {
@@ -42,7 +44,7 @@ fn run() -> io::Result<()> {
         };
         #[cfg(windows)]
         {
-            pipeline::run_realtime_with_hwnd(capture, input, hwnd, pipeline)?
+            pipeline::run_realtime_with_hwnd(capture, input, hwnd, args.cursor_debug, pipeline)?
         }
         #[cfg(not(windows))]
         {
@@ -116,6 +118,7 @@ struct Args {
     events_jsonl: Option<PathBuf>,
     thoughts_jsonl: Option<PathBuf>,
     target_hwnd: Option<isize>,
+    cursor_debug: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -127,6 +130,7 @@ fn parse_args() -> Result<Args, String> {
     let mut events_jsonl: Option<PathBuf> = None;
     let mut thoughts_jsonl: Option<PathBuf> = None;
     let mut target_hwnd: Option<isize> = None;
+    let mut cursor_debug = false;
 
     let mut iter = env::args().skip(1);
     while let Some(arg) = iter.next() {
@@ -159,6 +163,9 @@ fn parse_args() -> Result<Args, String> {
                 let value = next_string(&mut iter, &arg)?;
                 target_hwnd = Some(parse_hwnd(&value)?);
             }
+            "--cursor-debug" => {
+                cursor_debug = true;
+            }
             "--help" | "-h" => {
                 return Err(usage());
             }
@@ -185,6 +192,7 @@ fn parse_args() -> Result<Args, String> {
         events_jsonl,
         thoughts_jsonl,
         target_hwnd,
+        cursor_debug,
     })
 }
 
@@ -199,6 +207,7 @@ Options:
   --events-jsonl <path>   Input events JSONL with qpc_ts timestamps
   --thoughts-jsonl <path> Thoughts JSONL (one line per step)
   --target-hwnd <hex>     Capture target HWND (enables WGC capture)
+  --cursor-debug          Log cursor mapping diagnostics (realtime mode)
   --help                  Show this help
 "#;
     text.to_string()
