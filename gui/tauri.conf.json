@@ -14,7 +14,9 @@
       "all": false
     },
     "bundle": {
-      "active": false
+      "active": true,
+      "targets": ["msi"],
+      "externalBin": ["bin/ffmpeg"]
     },
     "security": {
       "csp": null
