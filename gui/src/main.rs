@@ -1,8 +1,8 @@
 #![cfg(feature = "tauri")]
 
 use gui::tauri_commands::{
-    join_package, join_session, list_windows, poll_package, poll_session, start_package,
-    start_session, GuiState,
+    join_package, join_session, list_windows, poll_package, poll_session, set_thought,
+    start_package, start_session, GuiState,
 };
 
 fn main() {
@@ -12,6 +12,7 @@ fn main() {
             start_session,
             poll_session,
             join_session,
+            set_thought,
             start_package,
             poll_package,
             join_package,

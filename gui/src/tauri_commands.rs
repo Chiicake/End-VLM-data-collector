@@ -85,6 +85,13 @@ pub fn join_session(id: u64, state: State<GuiState>) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn set_thought(id: u64, text: String, state: State<GuiState>) -> Result<(), String> {
+    let sessions = state.sessions.lock().map_err(|_| "lock poisoned")?;
+    let handle = sessions.get(&id).ok_or_else(|| "unknown session id".to_string())?;
+    handle.set_thought(text).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 pub fn start_package(request: PackageRequest, state: State<GuiState>) -> Result<u64, String> {
     let handle = start_package_async(request).map_err(|err| err.to_string())?;
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);

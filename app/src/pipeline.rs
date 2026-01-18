@@ -31,6 +31,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 const DEFAULT_FLUSH_LINES: u64 = 10;
 const DEFAULT_FLUSH_SECS: u64 = 1;
+const THOUGHT_TEMPLATE: &str =
+    "<|thought_start|>Previous Step Summary / Current Situation Analysis / Next Move Planning <|thought_end|>";
 
 pub struct PipelineConfig {
     pub dataset_root: PathBuf,
@@ -156,12 +158,38 @@ pub fn run_realtime_with_hwnd_and_hook<
     I: InputCollector,
     F: FnMut(&FrameRecord, bool, &CursorProvider),
 >(
+    capture: S,
+    input: I,
+    target_hwnd: isize,
+    debug_cursor: bool,
+    pipeline: SessionPipeline,
+    mut on_frame: F,
+) -> io::Result<SessionLayout> {
+    run_realtime_with_hwnd_and_hook_and_thought(
+        capture,
+        input,
+        target_hwnd,
+        debug_cursor,
+        pipeline,
+        &mut on_frame,
+        &mut || String::new(),
+    )
+}
+
+#[cfg(windows)]
+pub fn run_realtime_with_hwnd_and_hook_and_thought<
+    S: FrameSource,
+    I: InputCollector,
+    F: FnMut(&FrameRecord, bool, &CursorProvider),
+    T: FnMut() -> String,
+>(
     mut capture: S,
     mut input: I,
     target_hwnd: isize,
     debug_cursor: bool,
     mut pipeline: SessionPipeline,
-    mut on_frame: F,
+    on_frame: &mut F,
+    thought_provider: &mut T,
 ) -> io::Result<SessionLayout> {
     let mut cursor_test = CursorTestState::new();
     set_per_monitor_dpi_awareness();
@@ -175,14 +203,13 @@ pub fn run_realtime_with_hwnd_and_hook<
         let window_end = frame.qpc_ts;
         let window_start = window_end.saturating_sub(STEP_MS);
         let events = input.drain_events(window_start, window_end)?;
-        let (is_foreground, cursor, debug_info) =
-            sample_foreground_and_cursor(
-                target_hwnd,
-                frame.src_width,
-                frame.src_height,
-                frame.width,
-                frame.height,
-            )?;
+        let (is_foreground, cursor, debug_info) = sample_foreground_and_cursor(
+            target_hwnd,
+            frame.src_width,
+            frame.src_height,
+            frame.width,
+            frame.height,
+        )?;
         on_frame(&frame, is_foreground, &cursor);
         if debug_cursor && cursor_test.triggered(&events) {
             cursor_test.log_result(&cursor, debug_info.as_ref());
@@ -216,6 +243,7 @@ pub fn run_realtime_with_hwnd_and_hook<
             }
         }
 
+        let thought_line = thought_provider();
         pipeline.process_window(
             &events,
             window_start,
@@ -224,7 +252,7 @@ pub fn run_realtime_with_hwnd_and_hook<
             is_foreground,
             &cursor,
             &frame.data,
-            None,
+            Some(thought_line.as_str()),
         )?;
     }
 
@@ -409,12 +437,13 @@ pub fn default_session_name(now: &str, run_id: u32) -> String {
 }
 
 pub fn format_thought_line(content: &str) -> String {
-    if content.is_empty() {
-        "<|thought_start|><|thought_end|>".to_string()
-    } else if content.contains("<|thought_start|>") && content.contains("<|thought_end|>") {
-        content.to_string()
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        THOUGHT_TEMPLATE.to_string()
+    } else if trimmed.contains("<|thought_start|>") && trimmed.contains("<|thought_end|>") {
+        trimmed.to_string()
     } else {
-        format!("<|thought_start|>{} <|thought_end|>", content)
+        format!("<|thought_start|>{} <|thought_end|>", trimmed)
     }
 }
 

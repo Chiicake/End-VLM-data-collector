@@ -2,6 +2,7 @@ use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use std::fs::{self, File};
@@ -40,6 +41,7 @@ pub enum GuiStatus {
 pub struct GuiSessionHandle {
     pub rx: mpsc::Receiver<GuiStatus>,
     join: JoinHandle<io::Result<PathBuf>>,
+    thought: Arc<Mutex<String>>,
 }
 
 impl GuiSessionHandle {
@@ -51,6 +53,15 @@ impl GuiSessionHandle {
                 "gui session thread panicked",
             )),
         }
+    }
+
+    pub fn set_thought(&self, text: String) -> io::Result<()> {
+        let mut guard = self
+            .thought
+            .lock()
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "thought lock poisoned"))?;
+        *guard = text;
+        Ok(())
     }
 }
 
@@ -124,6 +135,8 @@ impl GuiSessionRunner {
         #[cfg(windows)]
         {
             let (tx, rx) = mpsc::channel();
+            let thought_state = Arc::new(Mutex::new(String::new()));
+            let thought_state_thread = Arc::clone(&thought_state);
             let handle = std::thread::spawn(move || {
                 let pipeline = SessionPipeline::create(PipelineConfig {
                     dataset_root: config.dataset_root.clone(),
@@ -139,18 +152,24 @@ impl GuiSessionRunner {
                 let input = RawInputCollector::new_with_target(Some(config.target_hwnd))?;
                 let tx_frame = tx.clone();
 
-                let result = app::pipeline::run_realtime_with_hwnd_and_hook(
+                let result = app::pipeline::run_realtime_with_hwnd_and_hook_and_thought(
                     capture,
                     input,
                     config.target_hwnd,
                     config.cursor_debug,
                     pipeline,
-                    |frame, is_foreground, _cursor| {
+                    &mut |frame, is_foreground, _cursor| {
                         let _ = tx_frame.send(GuiStatus::Frame {
                             step_index: frame.step_index,
                             qpc_ts: frame.qpc_ts,
                             is_foreground,
                         });
+                    },
+                    &mut || {
+                        thought_state_thread
+                            .lock()
+                            .map(|value| value.clone())
+                            .unwrap_or_default()
                     },
                 );
 
@@ -169,7 +188,11 @@ impl GuiSessionRunner {
                     }
                 }
             });
-            Ok(GuiSessionHandle { rx, join: handle })
+            Ok(GuiSessionHandle {
+                rx,
+                join: handle,
+                thought: thought_state,
+            })
         }
     }
 }

@@ -125,6 +125,15 @@ input[type="text"] {
   background: #fffaf2;
 }
 
+textarea {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #fffaf2;
+  resize: vertical;
+}
+
 select {
   border: 1px solid var(--line);
   border-radius: 12px;

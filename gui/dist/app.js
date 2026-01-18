@@ -5,6 +5,7 @@ const statusMeta = document.getElementById("status-meta");
 const logOutput = document.getElementById("log-output");
 const windowPicker = document.getElementById("window-picker");
 const refreshWindowsBtn = document.getElementById("refresh-windows");
+const thoughtInput = document.getElementById("thought-input");
 
 const startSessionBtn = document.getElementById("start-session");
 const joinSessionBtn = document.getElementById("join-session");
@@ -13,6 +14,8 @@ const joinPackageBtn = document.getElementById("join-package");
 
 let sessionId = null;
 let packageId = null;
+let thoughtTimer = null;
+const THOUGHT_DEBOUNCE_MS = 250;
 
 function log(line) {
   const entry = document.createElement("div");
@@ -128,6 +131,7 @@ async function startSession() {
     sessionId = await invokeCommand("start_session", { config });
     log(`Session started: id=${sessionId}`);
     setStatus("Recording", "Session running");
+    sendThoughtUpdate(true);
   } catch (err) {
     log(`Start failed: ${err}`);
     setStatus("Idle", "Error starting session");
@@ -196,6 +200,7 @@ async function joinSession() {
     const outputDir = await invokeCommand("join_session", { id: sessionId });
     log(`Session join completed: ${outputDir}`);
     setStatus("Idle", "Ready");
+    sessionId = null;
   } catch (err) {
     log(`Join failed: ${err}`);
   }
@@ -259,11 +264,29 @@ async function joinPackage() {
   }
 }
 
+function sendThoughtUpdate(force) {
+  if (sessionId == null || !tauriInvoke) return;
+  const text = thoughtInput.value;
+  invokeCommand("set_thought", { id: sessionId, text }).catch((err) => {
+    log(`Thought update failed: ${err}`);
+  });
+}
+
+function scheduleThoughtUpdate() {
+  if (thoughtTimer) {
+    clearTimeout(thoughtTimer);
+  }
+  thoughtTimer = setTimeout(() => {
+    sendThoughtUpdate(false);
+  }, THOUGHT_DEBOUNCE_MS);
+}
+
 startSessionBtn.addEventListener("click", startSession);
 joinSessionBtn.addEventListener("click", joinSession);
 startPackageBtn.addEventListener("click", startPackage);
 joinPackageBtn.addEventListener("click", joinPackage);
 refreshWindowsBtn.addEventListener("click", refreshWindowList);
+thoughtInput.addEventListener("input", scheduleThoughtUpdate);
 windowPicker.addEventListener("change", () => {
   const selected = parseHwnd(windowPicker.value);
   if (Number.isFinite(selected)) {

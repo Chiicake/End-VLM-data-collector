@@ -9,9 +9,13 @@ pub trait InputCollector {
     fn drain_events(&mut self, start: QpcTimestamp, end: QpcTimestamp) -> io::Result<Vec<InputEvent>>;
 }
 
+const DEFAULT_MAX_EVENTS: usize = 20_000;
+
 pub struct RawInputCollector {
     inner: rawinput::RawInputCollectorImpl,
     buffer: VecDeque<InputEvent>,
+    max_events: usize,
+    dropped_events: u64,
 }
 
 impl RawInputCollector {
@@ -24,16 +28,47 @@ impl RawInputCollector {
         Ok(Self {
             inner,
             buffer: VecDeque::new(),
+            max_events: DEFAULT_MAX_EVENTS,
+            dropped_events: 0,
         })
+    }
+
+    pub fn with_limits(target_hwnd: Option<isize>, max_events: usize) -> io::Result<Self> {
+        let inner = rawinput::RawInputCollectorImpl::new(target_hwnd)?;
+        Ok(Self {
+            inner,
+            buffer: VecDeque::new(),
+            max_events: max_events.max(1),
+            dropped_events: 0,
+        })
+    }
+
+    pub fn take_dropped_events(&mut self) -> u64 {
+        let out = self.dropped_events;
+        self.dropped_events = 0;
+        out
+    }
+
+    fn enforce_limit(&mut self) {
+        if self.buffer.len() <= self.max_events {
+            return;
+        }
+        let excess = self.buffer.len() - self.max_events;
+        for _ in 0..excess {
+            self.buffer.pop_front();
+        }
+        self.dropped_events = self.dropped_events.saturating_add(excess as u64);
     }
 }
 
 impl InputCollector for RawInputCollector {
     fn drain_events(&mut self, start: QpcTimestamp, end: QpcTimestamp) -> io::Result<Vec<InputEvent>> {
         self.inner.drain_into(&mut self.buffer)?;
+        self.enforce_limit();
         while matches!(self.buffer.front(), Some(ev) if ev.qpc_ts < start) {
             self.buffer.pop_front();
         }
+        self.enforce_limit();
         let mut out = Vec::new();
         while matches!(self.buffer.front(), Some(ev) if ev.qpc_ts < end) {
             if let Some(ev) = self.buffer.pop_front() {
@@ -111,15 +146,29 @@ pub fn keyboard_key_name(vk: u16) -> Option<&'static str> {
             let idx = (vk - 0x41) as usize;
             Some(LETTERS[idx])
         }
-        0x31 => Some("one"),
-        0x32 => Some("two"),
-        0x33 => Some("three"),
-        0x34 => Some("four"),
-        0x35 => Some("five"),
-        0x36 => Some("six"),
-        0x37 => Some("seven"),
-        0x38 => Some("eight"),
-        0x39 => Some("nine"),
+        0x30..=0x39 => {
+            const DIGITS: [&str; 10] = [
+                "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+            ];
+            let idx = (vk - 0x30) as usize;
+            Some(DIGITS[idx])
+        }
+        0x60..=0x69 => {
+            const NUMPAD: [&str; 10] = [
+                "Numpad0",
+                "Numpad1",
+                "Numpad2",
+                "Numpad3",
+                "Numpad4",
+                "Numpad5",
+                "Numpad6",
+                "Numpad7",
+                "Numpad8",
+                "Numpad9",
+            ];
+            let idx = (vk - 0x60) as usize;
+            Some(NUMPAD[idx])
+        }
         0x70 => Some("One"),
         0x71 => Some("Two"),
         0x72 => Some("Three"),
@@ -139,10 +188,30 @@ pub fn keyboard_key_name(vk: u16) -> Option<&'static str> {
         0x1B => Some("Esc"),
         0x09 => Some("Tab"),
         0x0D => Some("Enter"),
+        0x08 => Some("Backspace"),
+        0x2D => Some("Insert"),
+        0x2E => Some("Delete"),
+        0x24 => Some("Home"),
+        0x23 => Some("End"),
+        0x21 => Some("PageUp"),
+        0x22 => Some("PageDown"),
+        0x13 => Some("Pause"),
+        0x2C => Some("PrintScreen"),
+        0x14 => Some("CapsLock"),
+        0x90 => Some("NumLock"),
+        0x91 => Some("ScrollLock"),
         0x26 => Some("Up"),
         0x28 => Some("Down"),
         0x25 => Some("Left"),
         0x27 => Some("Right"),
+        0x5B => Some("LWin"),
+        0x5C => Some("RWin"),
+        0x5D => Some("Menu"),
+        0x6A => Some("NumpadMultiply"),
+        0x6B => Some("NumpadAdd"),
+        0x6D => Some("NumpadSubtract"),
+        0x6E => Some("NumpadDecimal"),
+        0x6F => Some("NumpadDivide"),
         _ => None,
     }
 }

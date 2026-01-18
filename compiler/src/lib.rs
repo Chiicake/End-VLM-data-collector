@@ -162,8 +162,8 @@ fn key_rank(key: &str) -> (u8, u8) {
     const MOD_KEYS: [&str; 3] = ["Shift", "Ctrl", "Alt"];
     const MOVE_KEYS: [&str; 4] = ["W", "A", "S", "D"];
     const NAV_KEYS: [&str; 4] = ["Space", "Esc", "Tab", "Enter"];
-    const NUM_KEYS: [&str; 9] = [
-        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    const NUM_KEYS: [&str; 10] = [
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
     ];
     const FUNC_KEYS: [&str; 12] = [
         "One",
