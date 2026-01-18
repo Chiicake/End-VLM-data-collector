@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+aggregator = { path = "../aggregator" }
+collector_core = { path = "../core", package = "core" }
+serde = "1.0"
+serde_json = "1.0"
