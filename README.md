@@ -15,10 +15,6 @@ Requirements:
 Build from source (Windows):
 ```bash
 git clone https://github.com/Chiicake/End-LVM-data-collector.git
-cd .\gui\dist
-python -m http.server 4173
-
-# open a new terminal
 cd gui
 cargo run -p gui --features tauri
 ```

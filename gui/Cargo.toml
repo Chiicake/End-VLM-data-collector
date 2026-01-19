@@ -10,6 +10,7 @@ collector_core = { path = "../core", package = "core" }
 input = { path = "../input" }
 serde = { version = "1.0", features = ["derive"] }
 zip = "0.6"
+tiny_http = "0.12"
 
 [features]
 default = []

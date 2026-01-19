@@ -3,7 +3,7 @@
     "beforeBuildCommand": "",
     "beforeDevCommand": "",
     "devPath": "http://127.0.0.1:4173/",
-    "distDir": "D:/Rust/End-LVM-data-collector/gui/dist"
+    "distDir": "./gui/dist"
   },
   "package": {
     "productName": "Collector GUI",
@@ -24,21 +24,11 @@
       "dangerousRemoteDomainIpcAccess": [
         {
           "domain": "127.0.0.1",
-          "windows": ["main"]
-        },
-        {
-          "domain": "localhost",
-          "windows": ["main"]
+          "windows": ["main"],
+          "enable-tauri-api": true
         }
       ]
     },
-    "windows": [
-      {
-        "title": "Collector GUI",
-        "width": 1050,
-        "height": 760,
-        "resizable": true
-      }
-    ]
+    "windows": []
   }
 }

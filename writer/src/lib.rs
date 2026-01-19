@@ -25,7 +25,7 @@ impl SessionLayout {
     pub fn new(dataset_root: &Path, session_name: &str) -> Self {
         let sessions_dir = dataset_root.join("sessions");
         let root_dir = sessions_dir.join(session_name);
-        let temp_dir = sessions_dir.join(format!("{}.tmp", session_name));
+        let temp_dir = root_dir.clone();
         Self {
             video_path: temp_dir.join("video.mp4"),
             actions_path: temp_dir.join("actions.jsonl"),
@@ -157,7 +157,7 @@ impl SessionWriter {
                 "session directory already exists",
             ));
         }
-        fs::create_dir_all(&layout.temp_dir)?;
+        fs::create_dir_all(&layout.root_dir)?;
 
         let actions = JsonlWriter::new(
             BufWriter::new(File::create(&layout.actions_path)?),
@@ -239,29 +239,7 @@ impl SessionWriter {
         auto_events.flush()?;
         ffmpeg.finish()?;
 
-        if layout.root_dir.exists() {
-            return Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "final session directory already exists",
-            ));
-        }
-        let mut last_err = None;
-        for _ in 0..10 {
-            match fs::rename(&layout.temp_dir, &layout.root_dir) {
-                Ok(()) => return Ok(layout),
-                Err(err) if err.kind() == io::ErrorKind::PermissionDenied => {
-                    last_err = Some(err);
-                    sleep(Duration::from_millis(200));
-                }
-                Err(err) => return Err(err),
-            }
-        }
-        Err(last_err.unwrap_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "failed to finalize session directory",
-            )
-        }))
+        Ok(layout)
     }
 }
 
