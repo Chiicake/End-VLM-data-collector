@@ -1,5 +1,7 @@
 # End-LVM Data Collector
 
+<img src="assets/example.png" alt="example" width="50%">
+
 ## What It Does
 This project records synchronized gameplay video and input data for training
 and evaluation. It captures a target window at 5 FPS, aggregates RawInput
