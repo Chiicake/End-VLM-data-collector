@@ -197,9 +197,6 @@ impl GuiSessionRunner {
     }
 }
 
-#[cfg(feature = "tauri")]
-pub mod tauri_commands;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageRequest {
     pub dataset_root: PathBuf,

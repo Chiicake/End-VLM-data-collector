@@ -1,6 +1,8 @@
 #![cfg(feature = "tauri")]
 
-use gui::tauri_commands::{
+mod tauri_commands;
+
+use tauri_commands::{
     join_package, join_session, list_windows, poll_package, poll_session, set_thought,
     start_package, start_session, GuiState,
 };

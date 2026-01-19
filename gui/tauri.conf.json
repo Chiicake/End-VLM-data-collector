@@ -15,8 +15,9 @@
     },
     "bundle": {
       "active": true,
+      "identifier": "com.endlvm.collector-gui",
       "targets": ["msi"],
-      "externalBin": ["bin/ffmpeg"]
+      "externalBin": []
     },
     "security": {
       "csp": null

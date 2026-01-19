@@ -17,16 +17,15 @@ use writer::{SessionLayout, SessionWriter};
 #[cfg(windows)]
 use windows::Win32::Foundation::HWND;
 #[cfg(windows)]
-use windows::Win32::UI::Input::KeyboardAndMouse::GetCursorInfo;
-#[cfg(windows)]
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetCursorPos, CURSORINFO, CURSOR_SHOWING};
 #[cfg(windows)]
 use windows::Win32::UI::HiDpi::{
     GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 #[cfg(windows)]
+use windows::Win32::Graphics::Gdi::ScreenToClient;
+#[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClientRect, GetForegroundWindow, ScreenToClient,
+    GetClientRect, GetCursorInfo, GetCursorPos, GetForegroundWindow, CURSORINFO, CURSOR_SHOWING,
 };
 
 const DEFAULT_FLUSH_LINES: u64 = 10;
@@ -280,12 +279,12 @@ fn sample_foreground_and_cursor(
         let mut x_norm = 0.0f32;
         let mut y_norm = 0.0f32;
         let mut debug_info = None;
-        if GetCursorInfo(&mut ci).as_bool() {
-            visible = (ci.flags & CURSOR_SHOWING) != 0;
+        if GetCursorInfo(&mut ci).is_ok() {
+            visible = (ci.flags.0 & CURSOR_SHOWING.0) != 0;
         }
 
         let mut point = windows::Win32::Foundation::POINT { x: 0, y: 0 };
-        if GetCursorPos(&mut point).as_bool()
+        if GetCursorPos(&mut point).is_ok()
             && record_width > 0
             && record_height > 0
             && src_width > 0
@@ -294,7 +293,7 @@ fn sample_foreground_and_cursor(
             let mut client_point = point;
             if ScreenToClient(target, &mut client_point).as_bool() {
                 let mut rect = windows::Win32::Foundation::RECT::default();
-                if GetClientRect(target, &mut rect).as_bool() {
+                if GetClientRect(target, &mut rect).is_ok() {
                     let client_w = (rect.right - rect.left).max(0) as f32;
                     let client_h = (rect.bottom - rect.top).max(0) as f32;
                     if client_w > 0.0 && client_h > 0.0 {

@@ -23,19 +23,20 @@ use windows::Win32::System::Performance::QueryPerformanceCounter;
 #[cfg(windows)]
 use windows::Win32::System::Threading::GetCurrentThreadId;
 #[cfg(windows)]
-use windows::Win32::UI::Input::RawInput::{
-    GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE,
-    RAWINPUTHEADER, RIDEV_INPUTSINK, RID_INPUT, RI_KEY_BREAK, RI_MOUSE_LEFT_BUTTON_DOWN,
-    RI_MOUSE_LEFT_BUTTON_UP, RI_MOUSE_MIDDLE_BUTTON_DOWN, RI_MOUSE_MIDDLE_BUTTON_UP,
-    RI_MOUSE_RIGHT_BUTTON_DOWN, RI_MOUSE_RIGHT_BUTTON_UP, RI_MOUSE_WHEEL, RI_MOUSE_X_BUTTON_DOWN,
-    RI_MOUSE_X_BUTTON_UP, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
+use windows::Win32::UI::Input::{
+    GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER,
+    RIDEV_INPUTSINK, RID_INPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE,
 };
 #[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetWindowLongPtrW,
     GetForegroundWindow, PostThreadMessageW, RegisterClassW, SetWindowLongPtrW,
-    TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, HMENU, MSG, WM_INPUT,
-    WM_NCDESTROY, WM_QUIT, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+    TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, HMENU, MSG,
+    RI_KEY_BREAK, RI_MOUSE_BUTTON_4_DOWN, RI_MOUSE_BUTTON_4_UP, RI_MOUSE_BUTTON_5_DOWN,
+    RI_MOUSE_BUTTON_5_UP, RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_LEFT_BUTTON_UP,
+    RI_MOUSE_MIDDLE_BUTTON_DOWN, RI_MOUSE_MIDDLE_BUTTON_UP, RI_MOUSE_RIGHT_BUTTON_DOWN,
+    RI_MOUSE_RIGHT_BUTTON_UP, RI_MOUSE_WHEEL, WM_INPUT, WM_NCDESTROY, WM_QUIT, WNDCLASSW,
+    WS_OVERLAPPEDWINDOW,
 };
 
 #[cfg(windows)]
@@ -135,7 +136,7 @@ fn run_message_loop(
             HWND(0),
             HMENU(0),
             windows::Win32::Foundation::HINSTANCE(0),
-            std::ptr::null(),
+            None,
         );
         if hwnd.0 == 0 {
             let _ = ready_tx.send(Err(io::Error::new(
@@ -166,9 +167,9 @@ fn run_message_loop(
                 hwndTarget: hwnd,
             },
         ];
-        if let Err(err) = RegisterRawInputDevices(&devices, size_of::<RAWINPUTDEVICE>() as u32)
-            .ok()
-            .map_err(map_win_err)
+        if let Err(err) =
+            RegisterRawInputDevices(&devices, size_of::<RAWINPUTDEVICE>() as u32)
+                .map_err(map_win_err)
         {
             let _ = ready_tx.send(Err(err));
             return;
@@ -250,9 +251,9 @@ fn handle_raw_input(hwnd: HWND, lparam: LPARAM) -> io::Result<()> {
         let sender = ctx.sender.clone();
 
         match raw.header.dwType {
-            RIM_TYPEKEYBOARD => {
+            value if value == RIM_TYPEKEYBOARD.0 => {
                 let keyboard = unsafe { raw.data.keyboard };
-                let is_down = (keyboard.Flags & RI_KEY_BREAK) == 0;
+                let is_down = (keyboard.Flags & RI_KEY_BREAK as u16) == 0;
                 let vkey = keyboard.VKey;
                 if vkey == 255 {
                     return Ok(());
@@ -273,7 +274,7 @@ fn handle_raw_input(hwnd: HWND, lparam: LPARAM) -> io::Result<()> {
                     let _ = sender.send(event);
                 }
             }
-            RIM_TYPEMOUSE => {
+            value if value == RIM_TYPEMOUSE.0 => {
                 let mouse = unsafe { raw.data.mouse };
                 if mouse.lLastX != 0 || mouse.lLastY != 0 {
                     let _ = sender.send(InputEvent {
@@ -284,17 +285,19 @@ fn handle_raw_input(hwnd: HWND, lparam: LPARAM) -> io::Result<()> {
                         },
                     });
                 }
-                let flags = mouse.usButtonFlags;
-                emit_button(flags, RI_MOUSE_LEFT_BUTTON_DOWN, MouseButton::Left, true, timestamp, &sender);
-                emit_button(flags, RI_MOUSE_LEFT_BUTTON_UP, MouseButton::Left, false, timestamp, &sender);
-                emit_button(flags, RI_MOUSE_RIGHT_BUTTON_DOWN, MouseButton::Right, true, timestamp, &sender);
-                emit_button(flags, RI_MOUSE_RIGHT_BUTTON_UP, MouseButton::Right, false, timestamp, &sender);
-                emit_button(flags, RI_MOUSE_MIDDLE_BUTTON_DOWN, MouseButton::Middle, true, timestamp, &sender);
-                emit_button(flags, RI_MOUSE_MIDDLE_BUTTON_UP, MouseButton::Middle, false, timestamp, &sender);
-                emit_x_buttons(flags, mouse.usButtonData, true, timestamp, &sender);
-                emit_x_buttons(flags, mouse.usButtonData, false, timestamp, &sender);
-                if (flags & RI_MOUSE_WHEEL) != 0 {
-                    let delta = (mouse.usButtonData as i16) as i32;
+                let flags = mouse.Anonymous.Anonymous.usButtonFlags;
+                emit_button(flags, RI_MOUSE_LEFT_BUTTON_DOWN as u16, MouseButton::Left, true, timestamp, &sender);
+                emit_button(flags, RI_MOUSE_LEFT_BUTTON_UP as u16, MouseButton::Left, false, timestamp, &sender);
+                emit_button(flags, RI_MOUSE_RIGHT_BUTTON_DOWN as u16, MouseButton::Right, true, timestamp, &sender);
+                emit_button(flags, RI_MOUSE_RIGHT_BUTTON_UP as u16, MouseButton::Right, false, timestamp, &sender);
+                emit_button(flags, RI_MOUSE_MIDDLE_BUTTON_DOWN as u16, MouseButton::Middle, true, timestamp, &sender);
+                emit_button(flags, RI_MOUSE_MIDDLE_BUTTON_UP as u16, MouseButton::Middle, false, timestamp, &sender);
+                emit_button(flags, RI_MOUSE_BUTTON_4_DOWN as u16, MouseButton::X1, true, timestamp, &sender);
+                emit_button(flags, RI_MOUSE_BUTTON_4_UP as u16, MouseButton::X1, false, timestamp, &sender);
+                emit_button(flags, RI_MOUSE_BUTTON_5_DOWN as u16, MouseButton::X2, true, timestamp, &sender);
+                emit_button(flags, RI_MOUSE_BUTTON_5_UP as u16, MouseButton::X2, false, timestamp, &sender);
+                if (flags & RI_MOUSE_WHEEL as u16) != 0 {
+                    let delta = (mouse.Anonymous.Anonymous.usButtonData as i16) as i32;
                     let _ = sender.send(InputEvent {
                         qpc_ts: timestamp,
                         kind: InputEventKind::MouseWheel { delta },
@@ -325,32 +328,6 @@ fn emit_button(
 }
 
 #[cfg(windows)]
-fn emit_x_buttons(
-    flags: u16,
-    button_data: u16,
-    is_down: bool,
-    ts: QpcTimestamp,
-    sender: &Sender<InputEvent>,
-) {
-    let mask = if is_down {
-        RI_MOUSE_X_BUTTON_DOWN
-    } else {
-        RI_MOUSE_X_BUTTON_UP
-    };
-    if (flags & mask) == 0 {
-        return;
-    }
-    let button = if (button_data & 0x0002) != 0 {
-        MouseButton::X2
-    } else {
-        MouseButton::X1
-    };
-    let _ = sender.send(InputEvent {
-        qpc_ts: ts,
-        kind: InputEventKind::MouseButton { button, is_down },
-    });
-}
-
 #[cfg(windows)]
 fn context_from_hwnd(hwnd: HWND) -> io::Result<&'static RawInputContext> {
     unsafe {

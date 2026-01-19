@@ -1,7 +1,7 @@
 [package]
 name = "gui"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 app = { path = "../app" }
@@ -18,6 +18,9 @@ tauri = ["dep:tauri"]
 [dependencies.tauri]
 version = "1.5"
 optional = true
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
 
 [[bin]]
 name = "collector-gui"

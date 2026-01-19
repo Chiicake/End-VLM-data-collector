@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use serde::Serialize;
 use tauri::State;
 
-use crate::{
+use gui::{
     start_package_async, GuiPackageHandle, GuiPackageStatus, GuiSessionConfig, GuiSessionHandle,
     GuiSessionRunner, GuiStatus, PackageRequest,
 };

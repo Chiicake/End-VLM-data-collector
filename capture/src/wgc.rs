@@ -1,5 +1,5 @@
 use std::io;
-use collector_core::{CaptureOptions, FrameRecord};
+use collector_core::{CaptureOptions, FrameRecord, QpcTimestamp, StepIndex};
 
 #[cfg(windows)]
 use std::sync::mpsc::{self, Receiver};
@@ -38,7 +38,7 @@ use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 #[cfg(windows)]
 use windows::Win32::System::WinRT::Direct3D11::{
-    CreateDirect3D11DeviceFromDXGIDevice, GetDXGIInterfaceFromObject,
+    CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess,
 };
 #[cfg(windows)]
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
@@ -235,34 +235,38 @@ fn create_d3d_device() -> WinResult<(ID3D11Device, ID3D11DeviceContext, IDirect3
             D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             Some(&[D3D_FEATURE_LEVEL_11_0]),
             D3D11_SDK_VERSION,
-            &mut device,
+            Some(&mut device),
             Some(&mut feature_level),
-            &mut context,
+            Some(&mut context),
         )?;
         let device = device.ok_or_else(|| windows::core::Error::from_win32())?;
         let context = context.ok_or_else(|| windows::core::Error::from_win32())?;
         let dxgi_device: IDXGIDevice = device.cast()?;
-        let d3d_device = CreateDirect3D11DeviceFromDXGIDevice(&dxgi_device)?;
+        let d3d_device: IDirect3DDevice =
+            CreateDirect3D11DeviceFromDXGIDevice(&dxgi_device)?.cast()?;
         Ok((device, context, d3d_device))
     }
 }
 
 #[cfg(windows)]
-fn get_frame_texture(frame: &windows::Graphics::Capture::Direct3D11CaptureFrame) -> WinResult<ID3D11Texture2D> {
+fn get_frame_texture(
+    frame: &windows::Graphics::Capture::Direct3D11CaptureFrame,
+) -> WinResult<ID3D11Texture2D> {
     let surface = frame.Surface()?;
-    unsafe { GetDXGIInterfaceFromObject(&surface) }
+    let access: IDirect3DDxgiInterfaceAccess = surface.cast()?;
+    unsafe { access.GetInterface::<ID3D11Texture2D>() }
 }
 
 #[cfg(windows)]
-fn read_texture(
+fn read_texture<'a>(
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
     texture: &ID3D11Texture2D,
     staging: &mut Option<ID3D11Texture2D>,
     width: u32,
     height: u32,
-    buffer: &mut Vec<u8>,
-) -> io::Result<&[u8]> {
+    buffer: &'a mut Vec<u8>,
+) -> io::Result<&'a [u8]> {
     unsafe {
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         texture.GetDesc(&mut desc);
@@ -272,16 +276,20 @@ fn read_texture(
             .unwrap_or(true);
         if needs_new {
             desc.BindFlags = 0;
-            desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
             desc.Usage = D3D11_USAGE_STAGING;
             desc.MiscFlags = 0;
             desc.MipLevels = 1;
             desc.ArraySize = 1;
             desc.SampleDesc.Count = 1;
             desc.SampleDesc.Quality = 0;
-            let staging_tex = device
-                .CreateTexture2D(&desc, None)
+            let mut staging_tex: Option<ID3D11Texture2D> = None;
+            device
+                .CreateTexture2D(&desc, None, Some(&mut staging_tex))
                 .map_err(map_win_err)?;
+            let staging_tex = staging_tex.ok_or_else(|| {
+                io::Error::new(io::ErrorKind::Other, "staging texture unavailable")
+            })?;
             *staging = Some(staging_tex);
         }
         let staging_tex = staging.as_ref().ok_or_else(|| {
@@ -393,12 +401,7 @@ fn ensure_window_ready(hwnd: HWND) -> io::Result<()> {
             ));
         }
         let mut rect = RECT::default();
-        if !GetWindowRect(hwnd, &mut rect).as_bool() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "failed to query target window rect",
-            ));
-        }
+        GetWindowRect(hwnd, &mut rect).map_err(map_win_err)?;
         let width = rect.right - rect.left;
         let height = rect.bottom - rect.top;
         if width <= 0 || height <= 0 {
