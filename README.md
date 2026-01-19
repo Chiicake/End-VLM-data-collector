@@ -5,13 +5,16 @@
 ## What It Does
 This project records synchronized gameplay video and input data for training
 and evaluation. It captures a target window at 5 FPS, aggregates RawInput
-events into 200ms steps, and writes both raw actions and compiled action
-strings into a session folder.
+events into 200ms steps, and writes actions strings into a file.
 
 ## Run
 Requirements: Windows, WGC & Webview2 Runtime
+https://github.com/Chiicake/End-VLM-data-collector/releases/download/v0.1/vlm-data-collector-gui-win64.zip
+下载解压之后直接运行collector-gui.exe
+选择对应的收集窗口之后点击start即可开始工作
+收集的文件夹默认为./sessions/{session_name}
 
-From release
+### From release
 ```bash
 Invoke-WebRequest -Uri "https://github.com/Chiicake/End-VLM-data-collector/releases/download/v0.1/vlm-data-collector-gui-win64.zip" -OutFile "vlm-data-collector-gui-win64.zip"
 Expand-Archive -Path ".\vlm-data-collector-gui-win64.zip" -DestinationPath ".\" -Force
