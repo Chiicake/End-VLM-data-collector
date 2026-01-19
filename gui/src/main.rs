@@ -11,9 +11,16 @@ use tauri::{WindowBuilder, WindowUrl};
 
 fn start_static_server(dist_dir: PathBuf) {
     std::thread::spawn(move || {
+        println!(
+            "INFO static server: starting on http://127.0.0.1:4173 (dist_dir={})",
+            dist_dir.display()
+        );
         let server = match tiny_http::Server::http("127.0.0.1:4173") {
             Ok(server) => server,
-            Err(_) => return,
+            Err(err) => {
+                eprintln!("ERROR static server: failed to bind: {err}");
+                return;
+            }
         };
         for request in server.incoming_requests() {
             let url = request.url();
@@ -39,17 +46,26 @@ fn start_static_server(dist_dir: PathBuf) {
                     );
                     response
                 }
-                Err(_) => tiny_http::Response::from_string("Not Found").with_status_code(404),
+                Err(_) => {
+                    eprintln!(
+                        "WARN static server: 404 (url={}, path={})",
+                        url,
+                        path.display()
+                    );
+                    tiny_http::Response::from_string("Not Found").with_status_code(404)
+                }
             };
             let _ = request.respond(response);
         }
     });
 }
 fn main() {
+    println!("INFO gui: starting");
     tauri::Builder::default()
         .manage(GuiState::default())
         .setup(|app| {
-            start_static_server(PathBuf::from("D:/Rust/End-LVM-data-collector/gui/dist"));
+            println!("INFO gui: setup");
+            start_static_server(PathBuf::from("./gui/dist"));
             WindowBuilder::new(
                 app,
                 "main",
@@ -59,6 +75,7 @@ fn main() {
                 .inner_size(1200.0, 760.0)
                 .resizable(true)
                 .build()?;
+            println!("INFO gui: main window created");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

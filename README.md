@@ -8,11 +8,19 @@ and evaluation. It captures a target window at 5 FPS, aggregates RawInput
 events into 200ms steps, and writes both raw actions and compiled action
 strings into a session folder.
 
-## Build & Run
-Requirements:
-- Rust toolchain (stable)
+## Run
+Requirements: Windows, WGC & Webview2 Runtime
 
-Build from source (Windows):
+From release
+```bash
+Invoke-WebRequest -Uri "https://github.com/Chiicake/End-LVM-data-collector/releases/download/r/vlm-data-collector-gui-win64.zip" -OutFile "vlm-data-collector-gui-win64.zip"
+Expand-Archive -Path ".\vlm-data-collector-gui-win64.zip" -DestinationPath ".\" -Force
+cd .\vlm-data-collector-gui-win64\
+.\collector-gui.exe
+```
+
+
+Build from source (Windows, need rust toolchain):
 ```bash
 git clone https://github.com/Chiicake/End-LVM-data-collector.git
 cd gui
