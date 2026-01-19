@@ -1,4 +1,4 @@
-# End-LVM Data Collector
+# End-VLM Data Collector
 
 <img src="assets/example.png" alt="example" width="50%">
 
