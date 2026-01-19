@@ -13,7 +13,7 @@ Requirements: Windows, WGC & Webview2 Runtime
 
 From release
 ```bash
-Invoke-WebRequest -Uri "https://github.com/Chiicake/End-LVM-data-collector/releases/download/r/vlm-data-collector-gui-win64.zip" -OutFile "vlm-data-collector-gui-win64.zip"
+Invoke-WebRequest -Uri "https://github.com/Chiicake/End-LVM-data-collector/releases/download/v0.1/vlm-data-collector-gui-win64.zip" -OutFile "vlm-data-collector-gui-win64.zip"
 Expand-Archive -Path ".\vlm-data-collector-gui-win64.zip" -DestinationPath ".\" -Force
 cd .\vlm-data-collector-gui-win64\
 .\collector-gui.exe
@@ -23,9 +23,9 @@ cd .\vlm-data-collector-gui-win64\
 Build from source (Windows, need rust toolchain):
 ```bash
 git clone https://github.com/Chiicake/End-LVM-data-collector.git
-cd gui
 cargo build -p gui --features tauri --release
-./target/release/collector-gui.exe
+move ./target/release/collector-gui.exe ./gui
+./gui/collector-gui.exe
 ```
 
 ## Inputs
