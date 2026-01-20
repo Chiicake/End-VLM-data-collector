@@ -42,7 +42,7 @@ Realtime capture:
 
 ## Outputs
 Each session is written under `dataset_root/sessions/<session_name>/`:
-- `video.mp4` (5 FPS, 1280x720, H.264)
+- `video.mp4` (5 FPS, 720p/480p, H.264)
 - `actions.jsonl` (5Hz snapshots with `step_index`)
 - `compiled_actions.jsonl` (one action string per step)
 - `thoughts.jsonl` (aligned with `actions.jsonl`)
@@ -52,7 +52,7 @@ Each session is written under `dataset_root/sessions/<session_name>/`:
 ## Notes & Constraints
 - Windows 10 21H2+ / Windows 11, x64.
 - Capture API is Windows Graphics Capture only.
-- Recording is fixed to 5 FPS and 1280x720 letterbox.
+- Recording is 5 FPS with 720p or 480p letterbox (configurable in GUI).
 - Foreground-only input is enforced.
 - Capture fails if the window is invalid, hidden, minimized, cloaked, or
   fullscreen-like.

@@ -59,13 +59,24 @@ function setStatus(label, meta) {
   statusMeta.textContent = meta;
 }
 
-function buildOptions(sessionName) {
+function resolveResolution(value) {
+  switch (value) {
+    case "640x480":
+      return { size: [640, 480], roi: "rois_config_640x480.json" };
+    case "1280x720":
+    default:
+      return { size: [1280, 720], roi: "rois_config_1280x720.json" };
+  }
+}
+
+function buildOptions(sessionName, resolutionValue) {
+  const resolution = resolveResolution(resolutionValue);
   return {
     schema_version: 1,
     capture: {
       api: "WindowsGraphicsCapture",
       fps: 5,
-      record_resolution: [1280, 720],
+      record_resolution: resolution.size,
       resize_mode: "letterbox",
       color_format: "BGRA8",
       include_cursor_in_video: false,
@@ -89,7 +100,7 @@ function buildOptions(sessionName) {
     },
     auto_events: {
       enabled: false,
-      roi_config: "rois_config_1280x720.json",
+      roi_config: resolution.roi,
       stability_frames: 3,
     }
   };
@@ -140,6 +151,7 @@ async function startSession() {
   const manualValue = parseHwnd(document.getElementById("target-hwnd").value);
   const hwndValue = Number.isFinite(pickerValue) ? pickerValue : manualValue;
   const cursorDebug = document.getElementById("cursor-debug").checked;
+  const resolutionValue = document.getElementById("record-resolution").value;
 
   if (!sessionName || !datasetRoot || !ffmpegPath || !Number.isFinite(hwndValue)) {
     log("Missing required session fields.");
@@ -152,7 +164,7 @@ async function startSession() {
     session_name: sessionName,
     ffmpeg_path: ffmpegPath,
     target_hwnd: hwndValue,
-    options: buildOptions(sessionName),
+    options: buildOptions(sessionName, resolutionValue),
     meta: buildMeta(sessionName),
     cursor_debug: cursorDebug,
   };
