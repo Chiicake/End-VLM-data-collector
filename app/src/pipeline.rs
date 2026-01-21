@@ -33,7 +33,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 const DEFAULT_FLUSH_LINES: u64 = 10;
 const DEFAULT_FLUSH_SECS: u64 = 1;
 const THOUGHT_TEMPLATE: &str =
-    "<|thought_start|>Previous Step Summary / Current Situation Analysis / Next Move Planning <|thought_end|>";
+    "<|labeling_instruct_start|>Labeling Instruct <|labeling_instruct_end|>";
 
 pub struct PipelineConfig {
     pub dataset_root: PathBuf,
@@ -533,10 +533,15 @@ pub fn format_thought_line(content: &str) -> String {
     let trimmed = content.trim();
     if trimmed.is_empty() {
         THOUGHT_TEMPLATE.to_string()
-    } else if trimmed.contains("<|thought_start|>") && trimmed.contains("<|thought_end|>") {
+    } else if trimmed.contains("<|labeling_instruct_start|>")
+        && trimmed.contains("<|labeling_instruct_end|>")
+    {
         trimmed.to_string()
     } else {
-        format!("<|thought_start|>{} <|thought_end|>", trimmed)
+        format!(
+            "<|labeling_instruct_start|>{} <|labeling_instruct_end|>",
+            trimmed
+        )
     }
 }
 

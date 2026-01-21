@@ -30,7 +30,7 @@ impl SessionLayout {
             video_path: temp_dir.join("video.mp4"),
             actions_path: temp_dir.join("actions.jsonl"),
             compiled_path: temp_dir.join("compiled_actions.jsonl"),
-            thoughts_path: temp_dir.join("thoughts.jsonl"),
+            thoughts_path: temp_dir.join("labeling_instruct.jsonl"),
             auto_events_path: temp_dir.join("auto_events.jsonl"),
             options_path: temp_dir.join("options.json"),
             meta_path: temp_dir.join("meta.json"),
@@ -134,7 +134,7 @@ pub fn default_ffmpeg_config(
         width,
         height,
         fps,
-        crf: 20,
+        crf: 16,
         gop: 10,
     }
 }

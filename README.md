@@ -46,7 +46,7 @@ Each session is written under `dataset_root/sessions/<session_name>/`:
 - `video.mp4` (2/3/5 FPS, 720p/480p, H.264)
 - `actions.jsonl` (one snapshot per frame with `step_index`)
 - `compiled_actions.jsonl` (one action string per frame)
-- `thoughts.jsonl` (aligned with `actions.jsonl`)
+- `labeling_instruct.jsonl` (aligned with `actions.jsonl`)
 - `auto_events.jsonl` (reserved, empty by default)
 - `options.json`, `meta.json`
 
